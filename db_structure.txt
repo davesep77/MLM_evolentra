@@ -1,0 +1,27 @@
+=== MLM_USERS TABLE ===
+id
+username
+email
+role
+password
+sponsor_id
+binary_position
+investment
+created_at
+status
+kyc_status
+two_factor_enabled
+two_factor_secret
+current_rank
+rank_achieved_at
+highest_rank
+
+=== MLM_WALLETS TABLE ===
+id
+user_id
+roi_wallet
+referral_wallet
+binary_wallet
+left_vol
+right_vol
+updated_at

@@ -1,0 +1,59 @@
+# Database Configuration
+config_db.php
+
+# Environment files
+.env
+.env.local
+
+# Composer
+/vendor/
+composer.phar
+composer.lock
+
+# Node modules
+node_modules/
+package-lock.json
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Uploaded files (if any)
+uploads/*
+!uploads/.gitkeep
+
+# Cache
+cache/
+*.cache
+
+# Artifacts directory (local development)
+artifacts/
+
+# Session files
+sessions/
+
+# Backup files
+*.bak
+*.backup
+*.sql
+
+# Sensitive data
+binance_keys.txt
+api_keys.txt
+secrets.txt

@@ -1,0 +1,3 @@
+@echo off
+echo Starting Evolentra Local Server...
+"d:\xampp\php\php.exe" -S localhost:8000
