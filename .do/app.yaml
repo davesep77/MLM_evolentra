@@ -21,8 +21,12 @@ services:
     
     # Build configuration
     build_command: |
-      composer install --no-dev --optimize-autoloader
-      
+      echo "Building PHP application..."
+      if [ -f composer.json ]; then
+        composer install --no-dev --optimize-autoloader
+      fi
+      echo "Build complete"
+
     # Run command - use PHP built-in server or configure Apache/Nginx
     run_command: |
       heroku-php-apache2
