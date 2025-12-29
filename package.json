@@ -4,6 +4,7 @@
   "description": "Evolentra MLM Platform on Binance Smart Chain",
   "main": "index.js",
   "scripts": {
+    "build": "echo 'PHP application - no build step required'",
     "compile": "hardhat compile",
     "test": "hardhat test",
     "deploy:testnet": "hardhat run scripts/deploy.js --network bscTestnet",
