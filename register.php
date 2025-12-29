@@ -3,9 +3,24 @@ require 'config_db.php';
 
 $message = "";
 
-// Get sponsor and position from URL
-$url_sponsor = isset($_GET['sponsor']) ? $_GET['sponsor'] : '';
+// Get referral code and position from URL
+$ref_code = isset($_GET['ref']) ? $_GET['ref'] : '';
+$url_sponsor = '';
 $url_position = isset($_GET['position']) ? strtoupper($_GET['position']) : '';
+
+// Track referral click if code provided
+if ($ref_code) {
+    require_once 'api/track_referral_click.php';
+    $ipAddress = $_SERVER['REMOTE_ADDR'] ?? null;
+    $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? null;
+    trackReferralClick($ref_code, $ipAddress, $userAgent);
+    
+    // Get sponsor username from referral code
+    $sponsor_query = $conn->query("SELECT username FROM mlm_users WHERE referral_code='$ref_code'");
+    if ($sponsor_query && $sponsor_query->num_rows > 0) {
+        $url_sponsor = $sponsor_query->fetch_assoc()['username'];
+    }
+}
 
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $username = $_POST['username'];
@@ -47,8 +62,24 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         
         if ($conn->query($sql) === TRUE) {
             $user_id = $conn->insert_id;
+            
             // create wallet
             $conn->query("INSERT INTO mlm_wallets (user_id) VALUES ($user_id)");
+            
+            // Generate referral code for new user
+            require_once 'lib/ReferralEngine.php';
+            $refEngine = new ReferralEngine($conn);
+            $newRefCode = $refEngine->generateReferralCode($user_id, $username);
+            $conn->query("UPDATE mlm_users SET referral_code='$newRefCode' WHERE id=$user_id");
+            
+            // Create referral links for new user
+            $refEngine->createReferralLinks($user_id, $newRefCode);
+            
+            // Mark conversion if referred
+            if ($ref_code && $sponsor_id) {
+                $refEngine->markConversion($ref_code, $user_id);
+            }
+            
             $message = "Registration successful! <a href='login.php' style='color: var(--secondary-color);'>Login here</a>";
         } else {
             $message = "Error: " . $conn->error;

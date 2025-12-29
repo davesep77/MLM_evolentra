@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wallet Connection Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a2e;
+            color: #fff;
+        }
+        .test-section {
+            background: rgba(255,255,255,0.05);
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 10px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        button {
+            background: linear-gradient(135deg, #F3BA2F 0%, #F0B90B 100%);
+            color: #000;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(240, 185, 11, 0.4);
+        }
+        .result {
+            margin-top: 15px;
+            padding: 15px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 5px;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+        .success { color: #10b981; }
+        .error { color: #ef4444; }
+        .info { color: #3b82f6; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Wallet Connection Diagnostic Tool</h1>
+    
+    <div class="test-section">
+        <h2>1. Wallet Detection</h2>
+        <button onclick="detectWallets()">Detect Installed Wallets</button>
+        <div id="detection-result" class="result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>2. Binance Wallet Connection Test</h2>
+        <button onclick="testBinanceConnection()">Test Binance Wallet</button>
+        <div id="binance-result" class="result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>3. Trust Wallet Connection Test</h2>
+        <button onclick="testTrustConnection()">Test Trust Wallet</button>
+        <div id="trust-result" class="result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>4. MetaMask Connection Test</h2>
+        <button onclick="testMetaMaskConnection()">Test MetaMask</button>
+        <div id="metamask-result" class="result"></div>
+    </div>
+    
+    <script src="js/multi_wallet.js"></script>
+    <script>
+        const connector = new MultiWalletConnector();
+        
+        function detectWallets() {
+            const result = document.getElementById('detection-result');
+            result.innerHTML = '<span class="info">Detecting wallets...</span>';
+            
+            const wallets = connector.detectWallets();
+            
+            let html = '<strong>Detection Results:</strong>\n\n';
+            html += `window.BinanceChain: ${typeof window.BinanceChain !== 'undefined' ? '✅ Found' : '❌ Not found'}\n`;
+            html += `window.ethereum: ${typeof window.ethereum !== 'undefined' ? '✅ Found' : '❌ Not found'}\n`;
+            
+            if (window.ethereum) {
+                html += `\nEthereum Provider Details:\n`;
+                html += `- isTrust: ${window.ethereum.isTrust || false}\n`;
+                html += `- isMetaMask: ${window.ethereum.isMetaMask || false}\n`;
+                html += `- isBinance: ${window.ethereum.isBinance || false}\n`;
+            }
+            
+            html += `\n<strong>Wallet Support:</strong>\n`;
+            html += `Binance Wallet: ${wallets.binance ? '✅ Supported' : '❌ Not installed'}\n`;
+            html += `Trust Wallet: ${wallets.trust ? '✅ Supported' : '❌ Not installed'}\n`;
+            html += `MetaMask: ${wallets.metamask ? '✅ Supported' : '❌ Not installed'}\n`;
+            
+            result.innerHTML = html;
+        }
+        
+        async function testBinanceConnection() {
+            const result = document.getElementById('binance-result');
+            result.innerHTML = '<span class="info">Connecting to Binance Wallet...</span>';
+            
+            try {
+                const response = await connector.connectBinanceWallet();
+                
+                if (response.success) {
+                    result.innerHTML = `<span class="success">✅ Success!</span>\n\nAddress: ${response.address}\nWallet: ${response.wallet}`;
+                } else {
+                    result.innerHTML = `<span class="error">❌ Failed</span>\n\nError: ${response.error}`;
+                }
+            } catch (error) {
+                result.innerHTML = `<span class="error">❌ Exception</span>\n\n${error.message}`;
+            }
+        }
+        
+        async function testTrustConnection() {
+            const result = document.getElementById('trust-result');
+            result.innerHTML = '<span class="info">Connecting to Trust Wallet...</span>';
+            
+            try {
+                const response = await connector.connectTrustWallet();
+                
+                if (response.success) {
+                    result.innerHTML = `<span class="success">✅ Success!</span>\n\nAddress: ${response.address}\nWallet: ${response.wallet}`;
+                } else {
+                    result.innerHTML = `<span class="error">❌ Failed</span>\n\nError: ${response.error}`;
+                }
+            } catch (error) {
+                result.innerHTML = `<span class="error">❌ Exception</span>\n\n${error.message}`;
+            }
+        }
+        
+        async function testMetaMaskConnection() {
+            const result = document.getElementById('metamask-result');
+            result.innerHTML = '<span class="info">Connecting to MetaMask...</span>';
+            
+            try {
+                const response = await connector.connectMetaMask();
+                
+                if (response.success) {
+                    result.innerHTML = `<span class="success">✅ Success!</span>\n\nAddress: ${response.address}\nWallet: ${response.wallet}`;
+                } else {
+                    result.innerHTML = `<span class="error">❌ Failed</span>\n\nError: ${response.error}`;
+                }
+            } catch (error) {
+                result.innerHTML = `<span class="error">❌ Exception</span>\n\n${error.message}`;
+            }
+        }
+        
+        // Auto-detect on page load
+        window.addEventListener('load', () => {
+            setTimeout(detectWallets, 500);
+        });
+    </script>
+</body>
+</html>

@@ -59,6 +59,12 @@
         <span class="nav-text">Deposit</span>
     </a>
 
+    <!-- WALLET PAYMENT (Direct Link) -->
+    <a href="wallet_payment.php" class="nav-item <?= basename($_SERVER['PHP_SELF']) == 'wallet_payment.php' ? 'active' : '' ?>">
+        <span class="nav-icon">💰</span>
+        <span class="nav-text">Crypto Wallet</span>
+    </a>
+
     <!-- PACKAGE MENU -->
     <div class="nav-group">
         <a href="javascript:void(0)" onclick="toggleMenu('menu-package', this)" class="nav-item <?= in_array(basename($_SERVER['PHP_SELF']), ['package.php']) ? 'active' : '' ?>">

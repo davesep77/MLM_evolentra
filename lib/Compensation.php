@@ -106,8 +106,9 @@ class Compensation {
     /**
      * Calculate and Pay Referral Commission for a NEW investment
      * Subject to Daily Cap check
+     * Enhanced with referral tracking integration
      */
-    public function processReferral($newUserInvestment, $sponsorId) {
+    public function processReferral($newUserInvestment, $sponsorId, $referredUserId = null) {
         if (!$sponsorId || $newUserInvestment < 50) return;
 
         $rate = $this->getReferralRate($newUserInvestment);
@@ -120,10 +121,12 @@ class Compensation {
             $current_earnings = $this->getDailyEarnings($sponsorId);
             $payable = $bonus;
             $flushed = 0;
+            $status = 'paid';
 
             if ($current_earnings + $bonus > $cap) {
                 $payable = max(0, $cap - $current_earnings);
                 $flushed = $bonus - $payable;
+                $status = $payable > 0 ? 'paid' : 'capped';
             }
 
             if ($payable > 0) {
@@ -133,6 +136,30 @@ class Compensation {
 
             if ($flushed > 0) {
                  $this->conn->query("INSERT INTO mlm_transactions (user_id, type, amount, description) VALUES ($sponsorId, 'FLUSHED', 0, 'Referral Capped (Flush out: $$flushed)')");
+                 $status = 'flushed';
+            }
+            
+            // NEW: Log to referral earnings tracking table
+            if ($referredUserId) {
+                $this->logReferralEarning($sponsorId, $referredUserId, $newUserInvestment, $rate, $payable > 0 ? $payable : $bonus, $status);
+            }
+        }
+    }
+    
+    /**
+     * Log referral earning to tracking table
+     */
+    private function logReferralEarning($referrerId, $referredUserId, $investmentAmount, $rate, $commissionAmount, $status = 'paid') {
+        $sql = "INSERT INTO mlm_referral_earnings 
+                (referrer_id, referred_user_id, investment_amount, commission_rate, commission_amount, level, status)
+                VALUES ($referrerId, $referredUserId, $investmentAmount, $rate, $commissionAmount, 1, '$status')";
+        
+        if ($this->conn->query($sql) === TRUE) {
+            // Update total_earned in referral_links
+            if ($status === 'paid') {
+                $this->conn->query("UPDATE mlm_referral_links 
+                                   SET total_earned = total_earned + $commissionAmount 
+                                   WHERE user_id = $referrerId");
             }
         }
     }

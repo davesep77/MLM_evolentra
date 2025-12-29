@@ -55,12 +55,29 @@ $today_sales_data = $today_sales_query->fetch_assoc();
 $today_sales = $today_sales_data['total'] ?? 0.00;
 
 
-// 4. Referral Links
+// 4. Referral Links (using referral code)
+require_once 'lib/ReferralEngine.php';
+$refEngine = new ReferralEngine($conn);
+
+// Ensure user has referral code
+if (empty($user_data['referral_code'])) {
+    $refCode = $refEngine->generateReferralCode($user_id, $username);
+    $conn->query("UPDATE mlm_users SET referral_code='$refCode' WHERE id=$user_id");
+    // Create referral links
+    $refEngine->createReferralLinks($user_id, $refCode);
+} else {
+    $refCode = $user_data['referral_code'];
+}
+
 $path = dirname($_SERVER['PHP_SELF']);
 if ($path == '/' || $path == '\\') { $path = ''; }
 $base_url = "http://" . $_SERVER['HTTP_HOST'] . str_replace('\\', '/', $path) . "/register.php";
-$link_left = $base_url . "?sponsor=" . $username . "&position=left";
-$link_right = $base_url . "?sponsor=" . $username . "&position=right";
+$link_general = $base_url . "?ref=" . $refCode;
+$link_left = $base_url . "?ref=" . $refCode . "&position=left";
+$link_right = $base_url . "?ref=" . $refCode . "&position=right";
+
+// Get referral statistics
+$refStats = $refEngine->getReferralStats($user_id);
 
 ?>
 <!DOCTYPE html>
