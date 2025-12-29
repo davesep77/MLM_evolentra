@@ -1,6 +1,15 @@
 {
+    "name": "evolentra/mlm-platform",
+    "description": "Evolentra MLM Platform with Web3, Binance Pay, and Telegram Bot Integration",
+    "type": "project",
     "require": {
         "php": ">=7.4",
+        "ext-mysqli": "*",
+        "ext-pdo": "*",
+        "ext-pdo_mysql": "*",
+        "ext-json": "*",
+        "ext-curl": "*",
+        "ext-mbstring": "*",
         "telegram-bot/api": "^2.3",
         "guzzlehttp/guzzle": "^7.0",
         "monolog/monolog": "^2.0",
@@ -10,6 +19,22 @@
     "autoload": {
         "psr-4": {
             "Evolentra\\": "src/"
-        }
+        },
+        "files": [
+            "lib/DatabaseConfig.php"
+        ]
+    },
+    "scripts": {
+        "post-install-cmd": [
+            "@php -r \"echo 'Evolentra MLM Platform installed successfully!\\n';\""
+        ],
+        "test-db": [
+            "@php health.php"
+        ]
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "preferred-install": "dist",
+        "sort-packages": true
     }
 }

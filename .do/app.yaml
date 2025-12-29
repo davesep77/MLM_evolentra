@@ -1,0 +1,120 @@
+name: evolentra-mlm
+region: nyc
+
+# Database component - Managed MySQL database
+databases:
+  - name: evolentra-db
+    engine: MYSQL
+    version: "8"
+    production: true
+    cluster_name: evolentra-cluster
+
+# Main web application service
+services:
+  - name: web
+    # PHP runtime environment
+    environment_slug: php
+    github:
+      repo: YOUR_GITHUB_USERNAME/MLM_Evolentra
+      branch: main
+      deploy_on_push: true
+    
+    # Build configuration
+    build_command: |
+      composer install --no-dev --optimize-autoloader
+      
+    # Run command - use PHP built-in server or configure Apache/Nginx
+    run_command: |
+      heroku-php-apache2
+    
+    # Environment variables (will be set in DigitalOcean dashboard)
+    envs:
+      # Database (auto-populated by DigitalOcean from database component)
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        type: SECRET
+      
+      # Application settings
+      - key: APP_ENV
+        value: production
+        scope: RUN_AND_BUILD_TIME
+      
+      - key: APP_URL
+        value: ${APP_URL}
+        scope: RUN_AND_BUILD_TIME
+      
+      # Binance Pay API
+      - key: BINANCE_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+      
+      - key: BINANCE_API_SECRET
+        scope: RUN_TIME
+        type: SECRET
+      
+      - key: BINANCE_ENVIRONMENT
+        value: production
+        scope: RUN_TIME
+      
+      # Telegram Bot
+      - key: TELEGRAM_BOT_TOKEN
+        scope: RUN_TIME
+        type: SECRET
+      
+      - key: TELEGRAM_WEBHOOK_SECRET
+        scope: RUN_TIME
+        type: SECRET
+      
+      # BSC/Web3 Configuration
+      - key: BSC_NETWORK
+        value: mainnet
+        scope: RUN_TIME
+      
+      - key: BSC_RPC_URL
+        value: https://bsc-dataseed.binance.org/
+        scope: RUN_TIME
+      
+      - key: CONTRACT_ADDRESS
+        scope: RUN_TIME
+        type: SECRET
+      
+      # Session configuration
+      - key: SESSION_SECRET
+        scope: RUN_TIME
+        type: SECRET
+    
+    # Health check configuration
+    health_check:
+      http_path: /health.php
+      initial_delay_seconds: 30
+      period_seconds: 10
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 3
+    
+    # HTTP configuration
+    http_port: 8080
+    
+    # Instance configuration
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    
+    # Routes
+    routes:
+      - path: /
+    
+    # Source directory
+    source_dir: /
+
+# Static site for documentation (optional)
+# Uncomment if you want to host documentation separately
+# static_sites:
+#   - name: docs
+#     github:
+#       repo: YOUR_GITHUB_USERNAME/MLM_Evolentra
+#       branch: main
+#       deploy_on_push: true
+#     source_dir: /docs
+#     output_dir: /docs
+#     routes:
+#       - path: /docs

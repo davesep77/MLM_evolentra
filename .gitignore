@@ -4,6 +4,7 @@ config_db.php
 # Environment files
 .env
 .env.local
+.env.production
 
 # Composer
 /vendor/
@@ -52,8 +53,13 @@ sessions/
 *.bak
 *.backup
 *.sql
+database_export.sql
 
 # Sensitive data
 binance_keys.txt
 api_keys.txt
 secrets.txt
+
+# Deployment
+.do/deploy.template.yaml
+
