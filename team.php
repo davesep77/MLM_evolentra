@@ -1,4 +1,5 @@
 <?php
+session_start();
 require 'config_db.php';
 
 if (!isset($_SESSION['user_id'])) {
@@ -9,55 +10,29 @@ if (!isset($_SESSION['user_id'])) {
 $user_id = $_SESSION['user_id'];
 $username = $_SESSION['username'];
 
-// Get user's direct referrals
-$direct_query = $conn->query("
-    SELECT id, username, email, investment, binary_position, created_at 
-    FROM mlm_users 
-    WHERE sponsor_id = $user_id 
-    ORDER BY created_at DESC
-");
+try {
+    $stmt = $conn->prepare("
+        SELECT u.id, u.username, u.email, u.investment, u.created_at, u.status, u.binary_position,
+               w.roi_wallet, w.referral_wallet, w.binary_wallet
+        FROM mlm_users u
+        LEFT JOIN mlm_wallets w ON u.id = w.user_id
+        WHERE u.sponsor_id = :user_id
+        ORDER BY u.created_at DESC
+    ");
+    $stmt->execute(['user_id' => $user_id]);
+    $team_members = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Count total team members (all levels)
-function countTotalTeam($conn, $user_id, &$visited = []) {
-    if (in_array($user_id, $visited)) return 0;
-    $visited[] = $user_id;
-    
-    $count = 0;
-    $children = $conn->query("SELECT id FROM mlm_users WHERE sponsor_id = $user_id");
-    
-    while ($child = $children->fetch_assoc()) {
-        $count++;
-        $count += countTotalTeam($conn, $child['id'], $visited);
-    }
-    
-    return $count;
+    $total_directs = count($team_members);
+    $active_count = count(array_filter($team_members, fn($m) => $m['investment'] > 0));
+    $team_investment = array_sum(array_column($team_members, 'investment'));
+
+} catch (PDOException $e) {
+    error_log("Team page error: " . $e->getMessage());
+    $team_members = [];
+    $total_directs = 0;
+    $active_count = 0;
+    $team_investment = 0;
 }
-
-$total_team = countTotalTeam($conn, $user_id);
-$direct_count = $direct_query->num_rows;
-
-// Calculate team statistics
-$team_investment_query = $conn->query("
-    SELECT SUM(u.investment) as total_investment
-    FROM mlm_users u
-    WHERE u.sponsor_id = $user_id
-");
-$team_investment = $team_investment_query->fetch_assoc()['total_investment'] ?? 0;
-
-// Get left and right leg counts
-$left_leg_query = $conn->query("SELECT COUNT(*) as count FROM mlm_users WHERE sponsor_id = $user_id AND binary_position = 'L'");
-$left_count = $left_leg_query->fetch_assoc()['count'];
-
-$right_leg_query = $conn->query("SELECT COUNT(*) as count FROM mlm_users WHERE sponsor_id = $user_id AND binary_position = 'R'");
-$right_count = $right_leg_query->fetch_assoc()['count'];
-
-// Get wallet data for team volume
-$wallet_query = $conn->query("SELECT left_vol, right_vol FROM mlm_wallets WHERE user_id = $user_id");
-$wallet = $wallet_query->fetch_assoc();
-
-// Get active members (those with investment)
-$active_query = $conn->query("SELECT COUNT(*) as count FROM mlm_users WHERE sponsor_id = $user_id AND investment > 0");
-$active_count = $active_query->fetch_assoc()['count'];
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -65,440 +40,131 @@ $active_count = $active_query->fetch_assoc()['count'];
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My Team - Evolentra</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Inter', sans-serif;
-            background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4c1d95 100%);
-            min-height: 100vh;
-            color: white;
-            margin: 0;
-            padding: 0;
-        }
-
-        .main-wrapper {
-            margin-left: 280px;
-            padding: 2rem;
-            min-height: 100vh;
-        }
-
-        .page-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 2rem;
-        }
-
-        .page-title {
-            font-size: 2rem;
-            font-weight: 800;
-            background: linear-gradient(135deg, #a78bfa 0%, #ec4899 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 1.5rem;
-            margin-bottom: 2rem;
-        }
-
-        .stat-card {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 1.25rem;
-            padding: 1.5rem;
-            backdrop-filter: blur(20px);
-            position: relative;
-            overflow: hidden;
-        }
-
-        .stat-card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: radial-gradient(circle at 30% 50%, rgba(167, 139, 250, 0.15) 0%, transparent 50%);
-            pointer-events: none;
-        }
-
-        .stat-icon {
-            width: 50px;
-            height: 50px;
-            border-radius: 1rem;
-            background: linear-gradient(135deg, #a78bfa 0%, #ec4899 100%);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.5rem;
-            margin-bottom: 1rem;
-        }
-
-        .stat-value {
-            font-size: 2rem;
-            font-weight: 800;
-            color: white;
-            margin-bottom: 0.5rem;
-        }
-
-        .stat-label {
-            font-size: 0.875rem;
-            color: rgba(255, 255, 255, 0.6);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .team-table-card {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 1.5rem;
-            padding: 2rem;
-            backdrop-filter: blur(20px);
-        }
-
-        .table-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 1.5rem;
-        }
-
-        .table-title {
-            font-size: 1.25rem;
-            font-weight: 700;
-            color: white;
-        }
-
-        .search-box {
-            position: relative;
-        }
-
-        .search-box input {
-            padding: 0.75rem 1rem 0.75rem 2.5rem;
-            background: rgba(255, 255, 255, 0.08);
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            border-radius: 0.75rem;
-            color: white;
-            font-size: 0.9rem;
-            width: 300px;
-        }
-
-        .search-box i {
-            position: absolute;
-            left: 1rem;
-            top: 50%;
-            transform: translateY(-50%);
-            color: rgba(255, 255, 255, 0.5);
-        }
-
-        .team-table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        .team-table thead tr {
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .team-table th {
-            padding: 1rem;
-            text-align: left;
-            font-size: 0.875rem;
-            font-weight: 600;
-            color: rgba(255, 255, 255, 0.7);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .team-table td {
-            padding: 1.25rem 1rem;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-        }
-
-        .team-table tbody tr {
-            transition: all 0.3s ease;
-        }
-
-        .team-table tbody tr:hover {
-            background: rgba(255, 255, 255, 0.05);
-        }
-
-        .member-info {
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-        }
-
-        .member-avatar {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #a78bfa 0%, #ec4899 100%);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 700;
-            font-size: 1rem;
-        }
-
-        .member-details {
-            flex: 1;
-        }
-
-        .member-name {
-            font-weight: 600;
-            color: white;
-            margin-bottom: 0.25rem;
-        }
-
-        .member-email {
-            font-size: 0.8rem;
-            color: rgba(255, 255, 255, 0.5);
-        }
-
-        .badge {
-            padding: 0.375rem 0.75rem;
-            border-radius: 0.5rem;
-            font-size: 0.75rem;
-            font-weight: 600;
-            text-transform: uppercase;
-        }
-
-        .badge-left {
-            background: rgba(59, 130, 246, 0.2);
-            color: #93c5fd;
-        }
-
-        .badge-right {
-            background: rgba(236, 72, 153, 0.2);
-            color: #f9a8d4;
-        }
-
-        .badge-active {
-            background: rgba(16, 185, 129, 0.2);
-            color: #86efac;
-        }
-
-        .badge-inactive {
-            background: rgba(107, 114, 128, 0.2);
-            color: #9ca3af;
-        }
-
-        .empty-state {
-            text-align: center;
-            padding: 4rem 2rem;
-            color: rgba(255, 255, 255, 0.5);
-        }
-
-        .empty-state i {
-            font-size: 4rem;
-            margin-bottom: 1rem;
-            opacity: 0.3;
-        }
-
-        @media (max-width: 1200px) {
-            .stats-grid {
-                grid-template-columns: repeat(2, 1fr);
-            }
-        }
-
-        @media (max-width: 768px) {
-            .main-wrapper {
-                margin-left: 0;
-                padding: 1rem;
-            }
-            .stats-grid {
-                grid-template-columns: 1fr;
-            }
-            .search-box input {
-                width: 100%;
-            }
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', sans-serif; background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); color: #f1f5f9; min-height: 100vh; }
+        .dashboard-container { display: flex; }
+        .sidebar { width: 260px; background: rgba(30, 41, 59, 0.8); backdrop-filter: blur(10px); border-right: 1px solid rgba(255, 255, 255, 0.1); padding: 2rem 1rem; height: 100vh; position: sticky; top: 0; }
+        .logo { font-size: 1.75rem; font-weight: 800; background: linear-gradient(135deg, #10b981 0%, #34d399 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 2rem; text-align: center; }
+        .nav-menu { list-style: none; }
+        .nav-menu li { margin-bottom: 0.5rem; }
+        .nav-menu a { display: flex; align-items: center; gap: 0.75rem; padding: 0.875rem 1rem; color: #94a3b8; text-decoration: none; border-radius: 0.5rem; transition: all 0.2s; }
+        .nav-menu a:hover, .nav-menu a.active { background: rgba(16, 185, 129, 0.1); color: #10b981; }
+        .main-content { flex: 1; padding: 2rem; }
+        .page-header { background: rgba(30, 41, 59, 0.6); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 1rem; padding: 2rem; margin-bottom: 2rem; }
+        .page-header h1 { font-size: 2rem; margin-bottom: 0.5rem; }
+        .page-header p { color: #94a3b8; }
+        .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
+        .stat-box { background: rgba(30, 41, 59, 0.6); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 1rem; padding: 1.5rem; }
+        .stat-label { font-size: 0.875rem; color: #64748b; text-transform: uppercase; font-weight: 600; margin-bottom: 0.5rem; }
+        .stat-value { font-size: 2rem; font-weight: 800; color: #10b981; }
+        .table-container { background: rgba(30, 41, 59, 0.6); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 1rem; padding: 2rem; }
+        table { width: 100%; border-collapse: separate; border-spacing: 0 0.5rem; }
+        th { text-align: left; padding: 1rem; color: #64748b; font-size: 0.875rem; font-weight: 600; text-transform: uppercase; }
+        td { padding: 1rem; background: rgba(0, 0, 0, 0.2); }
+        tr:hover td { background: rgba(16, 185, 129, 0.1); }
+        tr td:first-child { border-radius: 0.5rem 0 0 0.5rem; }
+        tr td:last-child { border-radius: 0 0.5rem 0.5rem 0; }
+        .status-badge { padding: 0.25rem 0.75rem; border-radius: 0.5rem; font-size: 0.75rem; font-weight: 600; }
+        .status-active { background: rgba(16, 185, 129, 0.2); color: #10b981; }
+        .status-inactive { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+        .position-badge { padding: 0.25rem 0.75rem; border-radius: 0.5rem; font-size: 0.75rem; font-weight: 600; }
+        .position-left { background: rgba(59, 130, 246, 0.2); color: #3b82f6; }
+        .position-right { background: rgba(236, 72, 153, 0.2); color: #ec4899; }
+        .logout-btn { background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); padding: 0.75rem 1.5rem; border-radius: 0.5rem; text-decoration: none; display: inline-block; font-weight: 600; transition: all 0.2s; }
     </style>
 </head>
 <body>
-    <?php include 'sidebar_nav.php'; ?>
-    
-    <div class="main-wrapper">
-        <div class="page-header">
-            <h1 class="page-title">My Team</h1>
-        </div>
+    <div class="dashboard-container">
+        <aside class="sidebar">
+            <div class="logo">Evolentra</div>
+            <ul class="nav-menu">
+                <li><a href="dashboard.php"><i class="fas fa-home"></i> Dashboard</a></li>
+                <li><a href="team.php" class="active"><i class="fas fa-users"></i> My Team</a></li>
+                <li><a href="genealogy.php"><i class="fas fa-sitemap"></i> Binary Tree</a></li>
+                <li><a href="income_report.php"><i class="fas fa-chart-line"></i> Income Report</a></li>
+                <li><a href="withdraw.php"><i class="fas fa-money-bill-wave"></i> Withdraw</a></li>
+                <li><a href="profile.php"><i class="fas fa-user"></i> Profile</a></li>
+            </ul>
+            <div style="position: absolute; bottom: 2rem; left: 1rem; right: 1rem;">
+                <a href="logout.php" class="logout-btn" style="width: 100%; text-align: center; display: block;">
+                    <i class="fas fa-sign-out-alt"></i> Logout
+                </a>
+            </div>
+        </aside>
 
-        <!-- Statistics Grid -->
-        <div class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-icon">
-                    <i class="fas fa-users"></i>
-                </div>
-                <div class="stat-value"><?= $total_team ?></div>
-                <div class="stat-label">Total Team</div>
+        <main class="main-content">
+            <div class="page-header">
+                <h1>My Team</h1>
+                <p>View and manage your direct referrals</p>
             </div>
 
-            <div class="stat-card">
-                <div class="stat-icon">
-                    <i class="fas fa-user-plus"></i>
+            <div class="stats-row">
+                <div class="stat-box">
+                    <div class="stat-label">Total Direct Referrals</div>
+                    <div class="stat-value"><?= $total_directs ?></div>
                 </div>
-                <div class="stat-value"><?= $direct_count ?></div>
-                <div class="stat-label">Direct Referrals</div>
-            </div>
-
-            <div class="stat-card">
-                <div class="stat-icon">
-                    <i class="fas fa-check-circle"></i>
+                <div class="stat-box">
+                    <div class="stat-label">Active Members</div>
+                    <div class="stat-value"><?= $active_count ?></div>
                 </div>
-                <div class="stat-value"><?= $active_count ?></div>
-                <div class="stat-label">Active Members</div>
-            </div>
-
-            <div class="stat-card">
-                <div class="stat-icon">
-                    <i class="fas fa-dollar-sign"></i>
-                </div>
-                <div class="stat-value">$<?= number_format($team_investment, 0) ?></div>
-                <div class="stat-label">Team Investment</div>
-            </div>
-        </div>
-
-        <!-- Binary Leg Stats -->
-        <div class="stats-grid" style="grid-template-columns: 1fr 1fr; margin-bottom: 2rem;">
-            <div class="stat-card">
-                <div class="stat-icon" style="background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);">
-                    <i class="fas fa-arrow-left"></i>
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: flex-end;">
-                    <div>
-                        <div class="stat-value"><?= $left_count ?></div>
-                        <div class="stat-label">Left Leg Members</div>
-                    </div>
-                    <div style="text-align: right;">
-                        <div style="font-size: 1.25rem; font-weight: 700; color: #93c5fd;">
-                            $<?= number_format($wallet['left_vol'], 0) ?>
-                        </div>
-                        <div style="font-size: 0.75rem; color: rgba(255,255,255,0.5);">Volume</div>
-                    </div>
+                <div class="stat-box">
+                    <div class="stat-label">Total Team Investment</div>
+                    <div class="stat-value">$<?= number_format($team_investment, 2) ?></div>
                 </div>
             </div>
 
-            <div class="stat-card">
-                <div class="stat-icon" style="background: linear-gradient(135deg, #ec4899 0%, #f472b6 100%);">
-                    <i class="fas fa-arrow-right"></i>
-                </div>
-                <div style="display: flex; justify-content: space-between; align-items: flex-end;">
-                    <div>
-                        <div class="stat-value"><?= $right_count ?></div>
-                        <div class="stat-label">Right Leg Members</div>
-                    </div>
-                    <div style="text-align: right;">
-                        <div style="font-size: 1.25rem; font-weight: 700; color: #f9a8d4;">
-                            $<?= number_format($wallet['right_vol'], 0) ?>
-                        </div>
-                        <div style="font-size: 0.75rem; color: rgba(255,255,255,0.5);">Volume</div>
-                    </div>
-                </div>
+            <div class="table-container">
+                <h3 style="margin-bottom: 1.5rem; font-size: 1.25rem;">Direct Referrals</h3>
+                <?php if (count($team_members) > 0): ?>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Username</th>
+                            <th>Email</th>
+                            <th>Position</th>
+                            <th>Investment</th>
+                            <th>Total Earnings</th>
+                            <th>Join Date</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($team_members as $member): ?>
+                        <tr>
+                            <td><strong><?= htmlspecialchars($member['username']) ?></strong></td>
+                            <td><?= htmlspecialchars($member['email']) ?></td>
+                            <td>
+                                <?php if ($member['binary_position'] === 'left'): ?>
+                                    <span class="position-badge position-left">Left</span>
+                                <?php elseif ($member['binary_position'] === 'right'): ?>
+                                    <span class="position-badge position-right">Right</span>
+                                <?php else: ?>
+                                    <span style="color: #64748b;">-</span>
+                                <?php endif; ?>
+                            </td>
+                            <td>$<?= number_format($member['investment'], 2) ?></td>
+                            <td>$<?= number_format(($member['roi_wallet'] ?? 0) + ($member['referral_wallet'] ?? 0) + ($member['binary_wallet'] ?? 0), 2) ?></td>
+                            <td><?= date('M d, Y', strtotime($member['created_at'])) ?></td>
+                            <td>
+                                <span class="status-badge status-<?= $member['status'] ?>">
+                                    <?= ucfirst($member['status']) ?>
+                                </span>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <?php else: ?>
+                <p style="text-align: center; padding: 3rem; color: #64748b;">
+                    <i class="fas fa-users" style="font-size: 3rem; margin-bottom: 1rem; display: block; opacity: 0.3;"></i>
+                    No team members yet. Share your referral link to start building your team!
+                </p>
+                <?php endif; ?>
             </div>
-        </div>
-
-        <!-- Team Members Table -->
-        <div class="team-table-card">
-            <div class="table-header">
-                <h3 class="table-title">Direct Referrals (<?= $direct_count ?>)</h3>
-                <div class="search-box">
-                    <i class="fas fa-search"></i>
-                    <input type="text" id="searchInput" placeholder="Search members..." onkeyup="searchTable()">
-                </div>
-            </div>
-
-            <?php if ($direct_count > 0): ?>
-            <table class="team-table" id="teamTable">
-                <thead>
-                    <tr>
-                        <th>Member</th>
-                        <th>Position</th>
-                        <th>Investment</th>
-                        <th>Status</th>
-                        <th>Joined Date</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php while ($member = $direct_query->fetch_assoc()): ?>
-                    <tr>
-                        <td>
-                            <div class="member-info">
-                                <div class="member-avatar">
-                                    <?= strtoupper(substr($member['username'], 0, 1)) ?>
-                                </div>
-                                <div class="member-details">
-                                    <div class="member-name"><?= htmlspecialchars($member['username']) ?></div>
-                                    <div class="member-email"><?= htmlspecialchars($member['email']) ?></div>
-                                </div>
-                            </div>
-                        </td>
-                        <td>
-                            <?php if ($member['binary_position'] == 'L'): ?>
-                                <span class="badge badge-left"><i class="fas fa-arrow-left"></i> Left</span>
-                            <?php elseif ($member['binary_position'] == 'R'): ?>
-                                <span class="badge badge-right"><i class="fas fa-arrow-right"></i> Right</span>
-                            <?php else: ?>
-                                <span class="badge" style="background: rgba(107,114,128,0.2); color: #9ca3af;">-</span>
-                            <?php endif; ?>
-                        </td>
-                        <td style="font-weight: 600; color: #a78bfa;">
-                            $<?= number_format($member['investment'], 2) ?>
-                        </td>
-                        <td>
-                            <?php if ($member['investment'] > 0): ?>
-                                <span class="badge badge-active"><i class="fas fa-check"></i> Active</span>
-                            <?php else: ?>
-                                <span class="badge badge-inactive"><i class="fas fa-times"></i> Inactive</span>
-                            <?php endif; ?>
-                        </td>
-                        <td style="color: rgba(255,255,255,0.7);">
-                            <?= date('M d, Y', strtotime($member['created_at'])) ?>
-                        </td>
-                    </tr>
-                    <?php endwhile; ?>
-                </tbody>
-            </table>
-            <?php else: ?>
-            <div class="empty-state">
-                <i class="fas fa-users-slash"></i>
-                <h3 style="margin-bottom: 0.5rem;">No Team Members Yet</h3>
-                <p>Start building your team by sharing your referral link!</p>
-            </div>
-            <?php endif; ?>
-        </div>
+        </main>
     </div>
-
-    <script>
-        function searchTable() {
-            const input = document.getElementById('searchInput');
-            const filter = input.value.toUpperCase();
-            const table = document.getElementById('teamTable');
-            const tr = table.getElementsByTagName('tr');
-
-            for (let i = 1; i < tr.length; i++) {
-                const td = tr[i].getElementsByTagName('td')[0];
-                if (td) {
-                    const txtValue = td.textContent || td.innerText;
-                    if (txtValue.toUpperCase().indexOf(filter) > -1) {
-                        tr[i].style.display = '';
-                    } else {
-                        tr[i].style.display = 'none';
-                    }
-                }
-            }
-        }
-    </script>
 </body>
 </html>
